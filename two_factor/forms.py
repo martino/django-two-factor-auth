@@ -90,12 +90,15 @@ class YubiKeyDeviceForm(DeviceValidationForm):
 class U2FDeviceForm(DeviceValidationForm):
     token = forms.CharField(label=_("U2F Token"), widget=forms.PasswordInput(attrs={'autofocus': 'autofocus'}))
 
+    def _get_appid(self):
+        return '{scheme}://{host}'.format(scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host())
+
     def __init__(self, user, device, request, **kwargs):
         super(U2FDeviceForm, self).__init__(device, **kwargs)
         self.request = request
         self.user = user
         self.u2f_device = None
-        self.appId = '{scheme}://{host}'.format(scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host())
+        self.appId = self._get_appid()
 
         if self.data:
             self.registration_request = self.request.session['u2f_registration_request']
@@ -190,6 +193,9 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
     # its own `<form>`.
     use_required_attribute = False
 
+    def _get_appid(self):
+        return '{scheme}://{host}'.format(scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host())
+
     def __init__(self, user, initial_device, request, **kwargs):
         """
         `initial_device` is either the user's default device, or the backup
@@ -201,7 +207,7 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
         self.user = user
         self.request = request
         self.initial_device = initial_device
-        self.appId = '{scheme}://{host}'.format(scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host())
+        self.appId = self._get_appid()
 
         # YubiKey generates a OTP of 44 characters (not digits). So if the
         # user's primary device is a YubiKey, replace the otp_token
