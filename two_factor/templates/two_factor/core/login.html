@@ -53,6 +53,10 @@
   <script>
       var request = {{ wizard.form.sign_request|safe }};
       u2f.sign(request.appId, request.challenge, request.registeredKeys, function(resp) {
+          if (resp.errorCode != null) {
+              alert('U2F error ' + resp.errorCode);
+              return;
+          }
           var form = document.getElementById('login-form');
           form['token-otp_token'].value = JSON.stringify(resp);
           form.submit();
