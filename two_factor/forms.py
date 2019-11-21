@@ -3,19 +3,20 @@ import json
 from time import time
 
 from django import forms
+from django.conf import settings
 from django.forms import Form, ModelForm
+from django.utils import timezone
 from django.utils.translation import ugettext_lazy as _
 from django_otp.forms import OTPAuthenticationFormMixin
 from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
+from . import webauthn_utils
 from .models import (
-    PhoneDevice, U2FDevice, get_available_methods, get_available_phone_methods,
+    PhoneDevice, WebauthnDevice, get_available_methods, get_available_phone_methods,
 )
 from .utils import totp_digits
 from .validators import validate_international_phonenumber
-
-from u2flib_server import u2f
 
 try:
     from otp_yubikey.models import RemoteYubikeyDevice, YubikeyDevice
@@ -87,43 +88,76 @@ class YubiKeyDeviceForm(DeviceValidationForm):
         return super(YubiKeyDeviceForm, self).clean_token()
 
 
-class U2FDeviceForm(DeviceValidationForm):
-    token = forms.CharField(label=_("U2F Token"), widget=forms.PasswordInput(attrs={'autofocus': 'autofocus'}))
+class WebauthnDeviceForm(forms.Form):
+    token = forms.CharField(label=_("WebAuthn Token"), widget=forms.PasswordInput(attrs={'autofocus': 'autofocus'}))
 
-    def _get_appid(self):
-        return '{scheme}://{host}'.format(scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host())
+    class Media:
+        js = ('js/webauthn_utils.js', )
 
-    def __init__(self, user, device, request, **kwargs):
-        super(U2FDeviceForm, self).__init__(device, **kwargs)
+    def _get_relying_party(self):
+        return {
+            'id': self.request.get_host(),
+            'name': settings.TWO_FACTOR_WEBAUTHN_RP_NAME
+        }
+
+    def _get_origin(self):
+        return '{scheme}://{host}'.format(
+            scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host()
+        )
+
+    def __init__(self, user, request, **kwargs):
+        super(WebauthnDeviceForm, self).__init__(**kwargs)
         self.request = request
         self.user = user
-        self.u2f_device = None
-        self.appId = self._get_appid()
+        self.webauthn_device_info = None
 
         if self.data:
-            self.registration_request = self.request.session['u2f_registration_request']
+            self.registration_request = self.request.session['webauthn_registration_request']
         else:
-            self.registration_request = u2f.begin_registration(self.appId, [key.to_json() for key in self.request.user.u2f_keys.all()])
-            self.request.session['u2f_registration_request'] = self.registration_request
+            make_credential_options = webauthn_utils.make_credentials_options(user, self._get_relying_party())
+            self.registration_request = json.dumps(make_credential_options)
+            self.request.session['webauthn_registration_request'] = self.registration_request
 
     def clean_token(self):
-        response = self.cleaned_data['token']
+        response = json.loads(self.cleaned_data['token'])
         try:
-            request = self.request.session['u2f_registration_request']
-            u2f_device, attestation_cert = u2f.complete_registration(request, response)
-            self.u2f_device = u2f_device
-            if U2FDevice.objects.filter(public_key=self.u2f_device['publicKey']).count() > 0:
-                raise forms.ValidationError("U2F device already exists in database: "+str(e))
-        except ValueError as e:
-            raise forms.ValidationError("U2F device could not be verified: "+str(e))
+            request = json.loads(self.request.session['webauthn_registration_request'])
+            webauthn_registration_response = webauthn_utils.make_registration_response(
+                request, response, self._get_relying_party(), self._get_origin()
+            )
+
+            credentials = webauthn_registration_response.verify()
+            key_format = webauthn_utils.get_response_key_format(response)
+
+            self.webauthn_device_info = dict(
+                keyHandle=credentials.credential_id,
+                publicKey=credentials.public_key,
+                signCount=credentials.sign_count,
+                format=key_format,
+            )
+
+        except Exception as e:
+            message = e.args[0] if e.args else _('an unknown error happened.')
+            raise forms.ValidationError(_('Token validation failed: %s') % (message, ))
         return response
 
     def save(self):
         self.full_clean()
-        name = "key"
-        if len(self.request.user.u2f_keys.all()) == 0:
+        name = 'secondary'
+        if self.webauthn_device_info['format']:
+            name += f' ({self.webauthn_device_info["format"]})'
+
+        if len(self.request.user.webauthn_keys.all()) == 0:
             name = "default"
-        return U2FDevice.objects.create(name=name, public_key=self.u2f_device['publicKey'], key_handle=self.u2f_device['keyHandle'], app_id=self.u2f_device['appId'], user=self.user)
+
+        return WebauthnDevice.objects.create(
+            name=name,
+            public_key=self.webauthn_device_info['publicKey'],
+            key_handle=self.webauthn_device_info['keyHandle'],
+            sign_count=self.webauthn_device_info['signCount'],
+            user=self.user
+        )
+
 
 class TOTPDeviceForm(forms.Form):
     token = forms.IntegerField(label=_("Token"), min_value=0, max_value=int('9' * totp_digits()))
@@ -193,8 +227,19 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
     # its own `<form>`.
     use_required_attribute = False
 
-    def _get_appid(self):
-        return '{scheme}://{host}'.format(scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host())
+    class Media:
+        js = ('js/webauthn_utils.js', )
+
+    def _get_relying_party(self):
+        return {
+            'id': self.request.get_host(),
+            'name': settings.TWO_FACTOR_WEBAUTHN_RP_NAME
+        }
+
+    def _get_origin(self):
+        return '{scheme}://{host}'.format(
+            scheme='https' if self.request.is_secure() else 'http', host=self.request.get_host()
+        )
 
     def __init__(self, user, initial_device, request, **kwargs):
         """
@@ -207,7 +252,6 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
         self.user = user
         self.request = request
         self.initial_device = initial_device
-        self.appId = self._get_appid()
 
         # YubiKey generates a OTP of 44 characters (not digits). So if the
         # user's primary device is a YubiKey, replace the otp_token
@@ -215,28 +259,44 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
         if RemoteYubikeyDevice and YubikeyDevice and \
                 isinstance(initial_device, (RemoteYubikeyDevice, YubikeyDevice)):
             self.fields['otp_token'] = forms.CharField(label=_('YubiKey'), widget=forms.PasswordInput())
-        elif isinstance(initial_device, U2FDevice):
-            self.fields['otp_token'] = forms.CharField(label=_('U2F Token'), widget=forms.PasswordInput())
+        elif isinstance(initial_device, WebauthnDevice):
+            self.fields['otp_token'] = forms.CharField(label=_('WebAuthn Token'), widget=forms.PasswordInput())
             if self.data:
-                self.sign_request = self.request.session['u2f_sign_request']
+                self.sign_request = self.request.session['webauthn_sign_request']
             else:
-                self.sign_request = u2f.begin_authentication(self.appId, [key.to_json() for key in user.u2f_keys.all()])
-                self.request.session['u2f_sign_request'] = self.sign_request
+                relying_party = self._get_relying_party()
+                webauthn_assertion_options = webauthn_utils.make_assertion_options(user, relying_party)
+                self.sign_request = json.dumps(webauthn_assertion_options)
+                self.request.session['webauthn_sign_request'] = self.sign_request
 
     def clean(self):
-        if isinstance(self.initial_device, U2FDevice):
+        otp_token = self.cleaned_data.get('otp_token')
+        if otp_token and isinstance(self.initial_device, WebauthnDevice):
             # simulate what is done in the self.clean_otp
             self.user.otp_device = None
-            request = self.request.session['u2f_sign_request']
+            request = json.loads(self.request.session['webauthn_sign_request'])
 
             try:
-                response = json.loads(self.cleaned_data['otp_token'])
-                u2f.complete_authentication(request, response)
+                response = json.loads(otp_token)
+                device = webauthn_utils.get_device_used_in_response(self.user, response)
+                if self.initial_device is None:
+                    raise forms.ValidationError('Could not find valid credentials in the response')
+
+                self.initial_device = device
+                webauthn_assertion_response = webauthn_utils.make_assertion_response(
+                    self.user, self._get_relying_party(), self._get_origin(), self.initial_device, request, response
+                )
+                sign_count = webauthn_assertion_response.verify()
+                self.initial_device.sign_count = sign_count
+                self.initial_device.last_used_at = timezone.now()
+                self.initial_device.save()
+
                 self.user.otp_device = self.initial_device
             except json.JSONDecodeError:
-                self.add_error('otp_token', _('Invalid U2F token'))
-            except ValueError:
-                self.add_error('otp_token', _('U2F validation failed -- bad signature.'))
+                self.add_error('otp_token', _('Invalid WebAuthn token'))
+            except Exception as e:
+                message = e.args[0] if e.args else _('an unknown error happened.')
+                self.add_error('otp_token', _('Token validation failed: %s') % (message, ))
 
         else:
             self.clean_otp(self.user)

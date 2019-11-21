@@ -46,11 +46,6 @@ core = [
         view=ManageKeysView.as_view(),
         name='manage_keys',
     ),
-    url(
-        regex=r'^account/two_factor/add_u2f_key/$',
-        view=SetupView.as_view(),
-        name='add_u2f_key'
-    ),
 ]
 
 profile = [

@@ -3,24 +3,29 @@
 
 {% block content %}
 {{ block.super }}
-<h1>U2F Keys</h1>
-<a href="{% url 'two_factor:profile' %}"
-  class="btn btn-info">{% trans 'Back to profile' %}</a>
-<table>
+<h1>{% trans "User devices" %}</h1>
+<table style="width: 100%">
   <tbody>
+    <tr>
+        <th>{% trans "Name" %}</th>
+        <th>{% trans "Identifier" %}</th>
+        <th>{% trans "Confirmed?" %}</th>
+    </tr>
     {% for key in object_list %}
       <tr>
-        <td>{{ key.public_key }}</td>
+        <td>{{ key.name }}</td>
+        <td>{{ key.persistent_id }}</td>
+        <td>{{ key.confirmed }}</td>
         <td>
           <form method="post">{% csrf_token %}
-            <input name="key_id" type="hidden" value="{{ key.public_key }}">
-            <input type="submit" name="delete" value="X">
+            <input name="persistent_id" type="hidden" value="{{ key.persistent_id }}">
+            <input type="submit" name="delete" value="X" class="btn btn-primary">
           </form>
         </td>
       </tr>
     {% endfor %}
   </tbody>
 </table>
-<a href="{% url 'two_factor:add_u2f_key' %}"
-  class="btn btn-info">{% trans 'Add another key' %}</a>
+
+<a href="{% url 'two_factor:profile'%}" class="pull-right btn btn-link">{% trans "Back to Account Security" %}</a>
 {% endblock %}

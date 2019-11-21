@@ -45,7 +45,7 @@
       account.{% endblocktrans %}</p>
   {% endif %}
 
-  <form action="" method="post" id="auth-form">{% csrf_token %}
+  <form action="" method="post" id="auth-form" class="container-forms">{% csrf_token %}
     {% include "two_factor/_wizard_forms.html" %}
     {# hidden submit button to enable [enter] key #}
     <div style="margin-left: -9999px"><input type="submit" value=""/></div>
@@ -53,18 +53,32 @@
     {% include "two_factor/_wizard_actions.html" %}
   </form>
 
-<script>
-    var request = {{ wizard.form.registration_request|default:'null'|safe }};
-    if (request != null) {
-      u2f.register(request.appId, request.registerRequests, request.registeredKeys, function (resp) {
-        if (resp.errorCode != null) {
-          alert('U2F error ' + resp.errorCode);
-          return;
+    {{ form.media }}
+    <script>
+        var options = {{ wizard.form.registration_request|default:'null'|safe }};
+        if (options != null) {
+            options.challenge = str2ab(options.challenge);
+            for (var i = 0; i < options.excludeCredentials.length; i++) {
+                options.excludeCredentials[i].id = str2ab(options.excludeCredentials[i].id);
+            }
+            options.user.id = str2ab(options.user.id);
+
+            navigator.credentials.create({
+                publicKey: options
+            }).then((credential) => {
+                var r = credential.response;
+                var registerResponse = {
+                    id: credential.id,
+                    clientDataJSON: ab2str(r.clientDataJSON),
+                    attestationObject: ab2str(r.attestationObject)
+                };
+                form = document.forms[0];
+                response = document.querySelector('[name=webauthn-token]');
+                response.value = JSON.stringify(registerResponse);
+                form.submit();
+            }, (reason) => {
+                console.error("Registration error: ", reason);
+            });
         }
-        var form = document.getElementById('auth-form');
-        form['u2f-token'].value = JSON.stringify(resp);
-        form.submit();
-      })
-    }
-</script>
+    </script>
 {% endblock %}

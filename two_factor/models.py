@@ -44,7 +44,7 @@ def get_available_yubikey_methods():
 
 
 def get_available_methods():
-    methods = [('generator', _('Token generator')), ('u2f', _('FIDO U2F'))]
+    methods = [('generator', _('Token generator')), ('webauthn', _('WebAuthn'))]
     methods.extend(get_available_phone_methods())
     methods.extend(get_available_yubikey_methods())
     return methods
@@ -120,25 +120,24 @@ class PhoneDevice(Device):
             send_sms(device=self, token=token)
 
 
-class U2FDevice(Device):
+class WebauthnDevice(Device):
     """
-    Model for U2F authentication
+    Model for Webauthn authentication
     """
     class Meta:
         app_label = 'two_factor'
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='u2f_keys')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='webauthn_keys')
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True)
 
     public_key = models.TextField(unique=True)
     key_handle = models.TextField()
-    app_id = models.TextField()
+    sign_count = models.IntegerField()
 
     def to_json(self):
         return {
             'publicKey': self.public_key,
             'keyHandle': self.key_handle,
-            'appId': self.app_id,
-            'version': 'U2F_V2',
+            'version': 'WEBAUTHN',
         }

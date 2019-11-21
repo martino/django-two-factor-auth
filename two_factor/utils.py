@@ -9,11 +9,26 @@ except ImportError:
     from urllib import quote, urlencode
 
 
+def device_sort_key(device):
+    klass = device.__class__
+    key = klass.__module__ + '.' + klass.__name__
+    return settings.TWO_FACTOR_DEVICE_PREFERENCE.get(key, 1000)
+
+
 def default_device(user):
     if not user or user.is_anonymous:
         return
-    for device in devices_for_user(user):
+    for device in sorted(devices_for_user(user), key=device_sort_key):
         if device.name == 'default':
+            return device
+
+
+def device_from_persistent_id(user, persistent_id, list_of_devices=None, confirmed=None):
+    if list_of_devices is None:
+        list_of_devices = devices_for_user(user, confirmed=confirmed)
+
+    for device in list_of_devices:
+        if device.persistent_id == persistent_id:
             return device
 
 
