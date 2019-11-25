@@ -77,6 +77,7 @@ class PhoneDeviceAdmin(admin.ModelAdmin):
 
 class WebauthnDeviceAdmin(admin.ModelAdmin):
     list_display = ('user', 'name', 'created_at', 'last_used_at', 'confirmed')
+    raw_id_fields = ('user',)
 
 
 admin.site.register(PhoneDevice, PhoneDeviceAdmin)
