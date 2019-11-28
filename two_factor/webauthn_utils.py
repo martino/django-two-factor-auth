@@ -2,6 +2,8 @@ import os
 import cbor2
 from binascii import b2a_hex
 
+from hashlib import sha1
+
 from django.conf import settings
 from webauthn import webauthn
 from webauthn.webauthn import _webauthn_b64_encode, _webauthn_b64_decode
@@ -11,6 +13,11 @@ from two_factor.models import WebauthnDevice
 
 def make_challenge():
     return _webauthn_b64_encode(os.urandom(32)).decode('utf-8')
+
+
+def make_user_id(user):
+    hashed_id = sha1(str(user.pk).encode('utf-8')).hexdigest().encode('utf-8')
+    return _webauthn_b64_encode(hashed_id).decode('utf-8')
 
 
 def get_response_key_format(response):
@@ -37,7 +44,7 @@ def make_credentials_options(user, relying_party):
         challenge=make_challenge(),
         rp_name=relying_party['name'],
         rp_id=relying_party['id'],
-        user_id=str(user.pk),
+        user_id=make_user_id(user),
         username=user.get_username(),
         display_name=user.get_full_name(),
         icon_url=None
@@ -76,7 +83,7 @@ def make_registration_response(request, response, relying_party, origin):
 
 def make_user(user, device, relying_party):
     return webauthn.WebAuthnUser(
-        user_id=str(user.pk),
+        user_id=make_user_id(user),
         username=user.get_username(),
         display_name=user.get_full_name(),
         icon_url=None,
