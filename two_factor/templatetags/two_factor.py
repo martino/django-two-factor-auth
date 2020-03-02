@@ -2,7 +2,7 @@ import re
 
 import phonenumbers
 from django import template
-from django.utils.translation import ugettext
+from django.utils.translation import ugettext as _
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
 from ..models import PhoneDevice, WebauthnDevice
@@ -51,12 +51,12 @@ def device_action(device):
     * Send text message to `+31 * ******58`
     * Call number `+31 * ******58`
     """
-    if isinstance(device, PhoneDevice):
-        number = mask_phone_number(format_phone_number(device.number))
-        if device.method == 'sms':
-            return ugettext('Send text message to %s') % number
-        elif device.method == 'call':
-            return ugettext('Call number %s') % number
+    assert isinstance(device, PhoneDevice)
+    number = mask_phone_number(format_phone_number(device.number))
+    if device.method == 'sms':
+        return _('Send text message to %s') % number
+    elif device.method == 'call':
+        return _('Call number %s') % number
 
     if isinstance(device, TOTPDevice):
         return ugettext('Insert a token from your TOTP device')

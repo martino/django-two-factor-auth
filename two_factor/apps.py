@@ -1,7 +1,6 @@
 from webauthn import webauthn
 from django.apps import AppConfig
 from django.conf import settings
-from six import iteritems
 
 
 class TwoFactorConfig(AppConfig):
@@ -24,11 +23,10 @@ class TwoFactorConfig(AppConfig):
     }
 
     def ready(self):
-
-        for name, default in iteritems(self.defaults):
+        for name, default in self.defaults.items():
             value = getattr(settings, name, default)
             setattr(settings, name, value)
 
-        from .admin import patch_admin
         if getattr(settings, 'TWO_FACTOR_PATCH_ADMIN', True):
+            from .admin import patch_admin
             patch_admin()

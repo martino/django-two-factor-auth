@@ -30,7 +30,7 @@ class MethodForm(forms.Form):
                                widget=forms.RadioSelect)
 
     def __init__(self, **kwargs):
-        super(MethodForm, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.fields['method'].choices = get_available_methods()
 
 
@@ -44,7 +44,7 @@ class PhoneNumberMethodForm(ModelForm):
         fields = 'number', 'method',
 
     def __init__(self, **kwargs):
-        super(PhoneNumberMethodForm, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.fields['method'].choices = get_available_phone_methods()
 
 
@@ -66,7 +66,7 @@ class DeviceValidationForm(forms.Form):
     }
 
     def __init__(self, device, **args):
-        super(DeviceValidationForm, self).__init__(**args)
+        super().__init__(**args)
         self.device = device
 
     def clean_token(self):
@@ -85,7 +85,7 @@ class YubiKeyDeviceForm(DeviceValidationForm):
 
     def clean_token(self):
         self.device.public_id = self.cleaned_data['token'][:-32]
-        return super(YubiKeyDeviceForm, self).clean_token()
+        return super().clean_token()
 
 
 class WebauthnDeviceForm(forms.Form):
@@ -167,7 +167,7 @@ class TOTPDeviceForm(forms.Form):
     }
 
     def __init__(self, key, user, metadata=None, **kwargs):
-        super(TOTPDeviceForm, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.key = key
         self.tolerance = 1
         self.t0 = 0
@@ -248,7 +248,7 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
         be verified against all devices, it is not limited to the given
         device.
         """
-        super(AuthenticationTokenForm, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.user = user
         self.request = request
         self.initial_device = initial_device

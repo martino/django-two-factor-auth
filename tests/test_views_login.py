@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+from unittest import mock
 
 from django.conf import settings
 from django.shortcuts import resolve_url
@@ -7,14 +7,10 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from django_otp import DEVICE_ID_SESSION_KEY
 from django_otp.oath import totp
-from django_otp.util import random_hex
+
+from two_factor.models import random_hex_str
 
 from .utils import UserMixin
-
-try:
-    from unittest import mock
-except ImportError:
-    import mock
 
 
 class LoginTest(UserMixin, TestCase):
@@ -76,7 +72,7 @@ class LoginTest(UserMixin, TestCase):
     def test_with_generator(self, mock_signal):
         user = self.create_user()
         device = user.totpdevice_set.create(name='default',
-                                            key=random_hex().decode())
+                                            key=random_hex_str())
 
         response = self._post({'auth-username': 'bouke@example.com',
                                'auth-password': 'secret',
@@ -89,6 +85,9 @@ class LoginTest(UserMixin, TestCase):
                          {'__all__': ['Invalid token. Please make sure you '
                                       'have entered it correctly.']})
 
+        # reset throttle because we're not testing that
+        device.throttle_reset()
+
         response = self._post({'token-otp_token': totp(device.bin_key),
                                'login_view-current_step': 'token'})
         self.assertRedirects(response, resolve_url(settings.LOGIN_REDIRECT_URL))
@@ -98,6 +97,25 @@ class LoginTest(UserMixin, TestCase):
 
         # Check that the signal was fired.
         mock_signal.assert_called_with(sender=mock.ANY, request=mock.ANY, user=user, device=device)
+
+    @mock.patch('two_factor.views.core.signals.user_verified.send')
+    def test_throttle_with_generator(self, mock_signal):
+        user = self.create_user()
+        device = user.totpdevice_set.create(name='default',
+                                            key=random_hex_str())
+
+        self._post({'auth-username': 'bouke@example.com',
+                    'auth-password': 'secret',
+                    'login_view-current_step': 'auth'})
+
+        # throttle device
+        device.throttle_increment()
+
+        response = self._post({'token-otp_token': totp(device.bin_key),
+                               'login_view-current_step': 'token'})
+        self.assertEqual(response.context_data['wizard']['form'].errors,
+                         {'__all__': ['Invalid token. Please make sure you '
+                                      'have entered it correctly.']})
 
     @mock.patch('two_factor.gateways.fake.Fake')
     @mock.patch('two_factor.views.core.signals.user_verified.send')
@@ -109,11 +127,11 @@ class LoginTest(UserMixin, TestCase):
         user = self.create_user()
         for no_digits in (6, 8):
             with self.settings(TWO_FACTOR_TOTP_DIGITS=no_digits):
-                user.totpdevice_set.create(name='default', key=random_hex().decode(),
+                user.totpdevice_set.create(name='default', key=random_hex_str(),
                                            digits=no_digits)
                 device = user.phonedevice_set.create(name='backup', number='+31101234567',
                                                      method='sms',
-                                                     key=random_hex().decode())
+                                                     key=random_hex_str())
 
                 # Backup phones should be listed on the login form
                 response = self._post({'auth-username': 'bouke@example.com',
@@ -160,7 +178,7 @@ class LoginTest(UserMixin, TestCase):
     @mock.patch('two_factor.views.core.signals.user_verified.send')
     def test_with_backup_token(self, mock_signal):
         user = self.create_user()
-        user.totpdevice_set.create(name='default', key=random_hex().decode())
+        user.totpdevice_set.create(name='default', key=random_hex_str())
         device = user.staticdevice_set.create(name='backup')
         device.token_set.create(token='abcdef123')
 
@@ -273,7 +291,7 @@ class LoginTest(UserMixin, TestCase):
 
 class BackupTokensTest(UserMixin, TestCase):
     def setUp(self):
-        super(BackupTokensTest, self).setUp()
+        super().setUp()
         self.create_user()
         self.enable_otp()
         self.login_user()
