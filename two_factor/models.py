@@ -120,7 +120,7 @@ class WebauthnDevice(Device):
     class Meta:
         app_label = 'two_factor'
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='webauthn_keys')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='webauthn_keys', on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True)
 

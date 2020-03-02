@@ -51,17 +51,17 @@ def device_action(device):
     * Send text message to `+31 * ******58`
     * Call number `+31 * ******58`
     """
-    assert isinstance(device, PhoneDevice)
-    number = mask_phone_number(format_phone_number(device.number))
-    if device.method == 'sms':
-        return _('Send text message to %s') % number
-    elif device.method == 'call':
-        return _('Call number %s') % number
+    if isinstance(device, PhoneDevice):
+        number = mask_phone_number(format_phone_number(device.number))
+        if device.method == 'sms':
+            return _('Send text message to %s') % number
+        elif device.method == 'call':
+            return _('Call number %s') % number
 
     if isinstance(device, TOTPDevice):
-        return ugettext('Insert a token from your TOTP device')
+        return _('Insert a token from your TOTP device')
 
     if isinstance(device, WebauthnDevice):
-        return ugettext('Use one of your WebAuthn-compatible devices')
+        return _('Use one of your WebAuthn-compatible devices')
 
     raise NotImplementedError('Unknown method: %s' % device.method)
